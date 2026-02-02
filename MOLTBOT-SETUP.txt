@@ -1,0 +1,184 @@
+╔══════════════════════════════════════════════════════════════╗
+║  KALSHI SIGNAL GENERATOR → MOLTBOT INTEGRATION GUIDE        ║
+╚══════════════════════════════════════════════════════════════╝
+
+📦 GITHUB REPO:
+https://github.com/reeceway/kalshi-hourly-btc-signal-generator
+
+═══════════════════════════════════════════════════════════════
+
+🚀 QUICK SETUP (5 MINUTES)
+
+1. Clone the repo:
+   git clone https://github.com/reeceway/kalshi-hourly-btc-signal-generator.git
+   cd kalshi-hourly-btc-signal-generator
+
+2. Install dependencies:
+   npm install
+
+3. Create .env file with your Kalshi credentials:
+   cat > .env << 'ENVEOF'
+   KALSHI_API_KEY=your_api_key_here
+   KALSHI_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+   paste_your_private_key_here
+   -----END RSA PRIVATE KEY-----"
+   KALSHI_AUTO_TRADE=false
+   COINBASE_PRODUCT_ID=BTC-USD
+   POLL_INTERVAL_MS=2000
+   ENVEOF
+
+4. Test run:
+   npm run kalshi
+
+5. Run as background service (macOS):
+   # Update paths in plist file first, then:
+   cp Library/LaunchAgents/com.kalshi.trading-bot.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/com.kalshi.trading-bot.plist
+
+═══════════════════════════════════════════════════════════════
+
+📊 SIGNAL OUTPUT FOR MOLTBOT
+
+Location: ./logs/current-signal.json
+Updates: Every 2 seconds
+
+Signal format:
+{
+  "signal": "BUY_YES" | "BUY_NO" | "NO_TRADE",
+  "ticker": "KXBTCD-26FEB0202-T76249.99",
+  "btc_price": 76365.76,
+  "best_edge": 0.182,         // Use this for filtering
+  "strength": "STRONG",       // STRONG > GOOD > OPTIONAL
+  "phase": "EARLY",           // EARLY/MID/LATE
+  "model_up": 0.682,          // Model probability
+  "model_down": 0.318,
+  "market_yes": 0.50,         // Current Kalshi prices
+  "market_no": 0.46,
+  "time_remaining_min": 42.5
+}
+
+═══════════════════════════════════════════════════════════════
+
+🤖 MOLTBOT INTEGRATION CODE
+
+Python example (poll every 2 seconds):
+
+import json
+import time
+
+SIGNAL_FILE = "/path/to/kalshi-hourly-btc-signal-generator/logs/current-signal.json"
+
+def read_signal():
+    with open(SIGNAL_FILE, 'r') as f:
+        return json.load(f)
+
+while True:
+    signal = read_signal()
+    
+    # Only trade STRONG signals with >15% edge
+    if signal['signal'] in ['BUY_YES', 'BUY_NO']:
+        if signal['strength'] == 'STRONG' and signal['best_edge'] > 0.15:
+            
+            side = 'yes' if signal['signal'] == 'BUY_YES' else 'no'
+            
+            # YOUR MOLTBOT TRADE EXECUTION HERE
+            execute_kalshi_trade(
+                ticker=signal['ticker'],
+                side=side,
+                edge=signal['best_edge'],
+                max_contracts=5
+            )
+            
+            # Wait for cooldown (YOUR LOGIC)
+            time.sleep(300)  # 5 min cooldown
+    
+    time.sleep(2)
+
+═══════════════════════════════════════════════════════════════
+
+✅ RECOMMENDED FILTERS FOR MOLTBOT
+
+1. STRONG signals only:
+   if signal['strength'] == 'STRONG'
+
+2. Edge > 15%:
+   if signal['best_edge'] > 0.15
+
+3. EARLY phase only (more time):
+   if signal['phase'] == 'EARLY'
+
+4. Model confidence > 65%:
+   if signal['signal'] == 'BUY_YES' and signal['model_up'] > 0.65
+
+5. Skip near expiration:
+   if signal['time_remaining_min'] > 10
+
+Example combined filter:
+    should_trade = (
+        signal['signal'] != 'NO_TRADE' and
+        signal['strength'] == 'STRONG' and
+        signal['best_edge'] > 0.15 and
+        signal['phase'] in ['EARLY', 'MID'] and
+        signal['time_remaining_min'] > 10
+    )
+
+═══════════════════════════════════════════════════════════════
+
+📈 TRADING LOGIC (SAME AS ORIGINAL POLYMARKET BOT)
+
+Phase thresholds (scaled 4x from 15m to 60m):
+- EARLY (>40min left): Requires 5% edge, 55% model confidence
+- MID (20-40min):       Requires 10% edge, 60% confidence
+- LATE (<20min):        Requires 20% edge, 65% confidence
+
+Technical indicators:
+- VWAP (volume-weighted average price)
+- RSI(14) with 14-period MA
+- MACD(12,26,9)
+- Heiken Ashi candles
+- Regime detection (TREND_UP/DOWN, RANGE, VOLATILE)
+
+═══════════════════════════════════════════════════════════════
+
+🔐 SECURITY
+
+⚠️  NEVER commit .env file to git!
+⚠️  Keep your Kalshi API keys secure
+⚠️  The .gitignore file prevents accidental commits
+
+═══════════════════════════════════════════════════════════════
+
+🐛 TROUBLESHOOTING
+
+Signal file not updating?
+→ Check: launchctl list | grep kalshi
+→ Logs: tail -f logs/bot-output.log
+
+Want to see live signals?
+→ watch -n 2 cat logs/current-signal.json
+
+Check signal history:
+→ tail logs/kalshi-signals.csv
+
+═══════════════════════════════════════════════════════════════
+
+📚 FULL DOCUMENTATION
+
+See README-MOLTBOT.md in the repo for:
+- Complete API reference
+- Backtesting examples
+- Advanced configuration
+- Kalshi market structure details
+
+═══════════════════════════════════════════════════════════════
+
+🎯 SUMMARY
+
+1. ✅ Signal generator runs continuously (every 2s)
+2. ✅ Outputs to logs/current-signal.json
+3. ✅ Your moltbot reads the file and executes trades
+4. ✅ You control: filtering, position sizing, exits
+
+Questions? Check the repo or logs/bot-error.log
+
+EOFcat ~/PolymarketBTC15mAssistant/MOLTBOT-SETUP.txt
